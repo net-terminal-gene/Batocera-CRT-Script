@@ -267,6 +267,46 @@ fi
 ACTION=$1
 shift
 
+# --- helpers: whitelist-aware mode selection (videomodes.conf) ---
+is_mode_in_videomodes_conf() {
+  local m="$1" f
+  for f in /userdata/system/videomodes.conf /userdata/system/configs/videomodes.conf; do
+    [ -s "$f" ] || continue
+    awk -v M="$m" 'NF && $0 !~ /^[[:space:]]*#/ { if ($0==M) { found=1; exit } } END { exit !found }' "$f"
+    if [ $? -eq 0 ]; then return 0; fi
+  done
+  return 1
+}
+
+_parse_wxh_rr() {
+  local s="$1"
+  if [[ "$s" =~ ^([0-9]+)x([0-9]+)\.([0-9.]+)$ ]]; then
+    echo "${BASH_REMATCH[1]} ${BASH_REMATCH[2]} ${BASH_REMATCH[3]}"
+    return 0
+  fi
+  return 1
+}
+
+_set_mode_from_videomodes_conf() {
+  local token="$1" out="${PSCREEN}"
+  local W H RR
+  if read -r W H RR < <(_parse_wxh_rr "$token"); then
+    xrandr --output "$out" --mode "${W}x${H}" --rate "$RR" 2>/dev/null && return 0
+    xrandr --output "$out" --mode "${W}x${H}" 2>/dev/null && return 0
+    if command -v switchres >/dev/null 2>&1; then
+      switchres -k -f "${W}x${H}@${RR}" >/dev/null 2>&1 || true
+      xrandr --output "$out" --mode "${W}x${H}" --rate "$RR" 2>/dev/null && return 0
+    fi
+    return 1
+  fi
+  if [[ "$token" =~ ^([0-9]+)x([0-9]+)$ ]]; then
+    xrandr --output "$out" --mode "$token"
+    return $?
+  fi
+  return 1
+}
+
+
 case "${ACTION}" in
     "listModes")
         # STRICT: only list modes explicitly present in videomodes.conf
@@ -505,7 +545,7 @@ fi
             done
             # enable (in case of reboot of es)
             echo "set user output: ${MODE1} as primary" >&2 >> "$log"
-            xrandr --output "${MODE1}" --primary
+            xrandr --output "${MODE1}" --primary --auto
             PREVIOUS_SCREEN="${MODE1}"
 
             # screen 2
@@ -513,7 +553,7 @@ fi
             then
             if xrandr --listConnectedOutputs | sed -e s+"*$"++ | grep -qE "^${MODE2}$"; then # if there is at least the screen 2
                 echo "set user output: ${MODE2} as right of ${PREVIOUS_SCREEN}" >&2 >> "$log"
-                xrandr --output "${MODE2}" --right-of "${PREVIOUS_SCREEN}"
+                xrandr --output "${MODE2}" --right-of "${PREVIOUS_SCREEN}" --auto
                 PREVIOUS_SCREEN="${MODE2}"
             fi
             fi
@@ -523,7 +563,7 @@ fi
             then
             if xrandr --listConnectedOutputs | sed -e s+"*$"++ | grep -qE "^${MODE3}$"; then # if there is at least the screen 3
                 echo "set user output: ${MODE3} as right of ${PREVIOUS_SCREEN}" >&2 >> "$log"
-                xrandr --output "${MODE3}" --right-of "${PREVIOUS_SCREEN}"
+                xrandr --output "${MODE3}" --right-of "${PREVIOUS_SCREEN}" --auto
                 PREVIOUS_SCREEN="${MODE3}"
             fi
             fi

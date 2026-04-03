@@ -2,10 +2,29 @@
 # Module 02b: HD Video Output Selection (First-Time Setup)
 #######################################################################################
 
+# Function: drm_name_to_xrandr
+# Purpose: Convert DRM sysfs connector name to xrandr-compatible name
+# Parameters: $1 - DRM connector name (e.g., HDMI-A-2, DP-1)
+# Returns: xrandr name via echo (e.g., HDMI-2, DP-1)
+# Note: The kernel defines HDMI-A and HDMI-B as distinct DRM connector types
+#        (drm_connector_enum_list in drm_connector.c). xrandr normalizes both
+#        to HDMI-N. HDMI-A is common on AMD/Intel; HDMI-B (dual-link) is defined
+#        but rarely seen in practice. Other types (DP, DVI-*, VGA, eDP, LVDS)
+#        match between DRM sysfs and xrandr.
+drm_name_to_xrandr() {
+    local name="$1"
+    case "$name" in
+        HDMI-[A-Z]-*) echo "HDMI-${name#HDMI-?-}" ;;
+        *)            echo "$name" ;;
+    esac
+}
+
 # Function: scan_xrandr_outputs
-# Purpose: Scan available video outputs using DRM sysfs
-# Returns: Populates ALL_OUTPUTS and CONNECTED_OUTPUTS arrays
-# Note: Uses DRM sysfs instead of xrandr because CRT mode disables other outputs in X11
+# Purpose: Scan available video outputs using DRM sysfs, normalized to xrandr names
+# Returns: Populates ALL_OUTPUTS and CONNECTED_OUTPUTS arrays with xrandr-format names
+# Note: Uses DRM sysfs instead of xrandr because CRT mode disables other outputs in X11.
+#        Names are normalized via drm_name_to_xrandr() so that values written to
+#        batocera.conf match what batocera-resolution listOutputs / ES expect.
 scan_xrandr_outputs() {
     ALL_OUTPUTS=()
     CONNECTED_OUTPUTS=()
@@ -25,6 +44,9 @@ scan_xrandr_outputs() {
         esac
         
         [ -z "$name" ] && continue
+        
+        # Normalize DRM name to xrandr format (e.g., HDMI-A-2 -> HDMI-2)
+        name=$(drm_name_to_xrandr "$name")
         
         # Check connection status
         local status=$(cat "$d/status" 2>/dev/null)

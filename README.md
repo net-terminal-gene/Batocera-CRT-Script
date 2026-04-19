@@ -29,7 +29,7 @@ This project would not have been possible without the help of many skilled and p
 ### 👨‍💻 Core Developers
 - **ZFEbHVUE** – Lead developer and main tester  
 - **Rion** – CRT wizard and 15kHz support guru  
-- **net_terminal_gene** – Code contributions, Steam Deck Tester, Arcade Guru
+- **net-terminal-gene** – HD/CRT mode switcher and Wayland/X11 dual-boot, Steam Deck testing, arcade setups, CRT Tools Artwork
 
 ### 👥 Contributors
 - **Sirmagb** – Geometry tool idea's  

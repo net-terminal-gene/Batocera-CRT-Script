@@ -65,6 +65,16 @@ class RuntimeState:
     rotation_source: str
 
 
+def request_system_reboot() -> None:
+    log_message("Reboot requested after ES geometry save")
+    try:
+        subprocess.run(["systemctl", "reboot"], check=False)
+        return
+    except OSError as exc:
+        log_message(f"systemctl reboot failed: {exc}")
+    subprocess.run(["reboot"], check=False)
+
+
 def log_message(message: str) -> None:
     try:
         LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -614,9 +624,55 @@ def main() -> int:
     selected = 0
     status_message = ""
     status_until = 0.0
-    show_saved = False
-    saved_at = 0.0
+    dialog_phase = "edit"
+    dialog_selected = 0
     running = True
+
+    def review_choices() -> list[tuple[str, str]]:
+        return [
+            ("Discard changes", "discard"),
+            ("Apply and save", "apply"),
+        ]
+
+    def complete_choices() -> list[tuple[str, str]]:
+        return [
+            ("Return to EmulationStation", "exit"),
+            ("Reboot now", "reboot"),
+        ]
+
+    def active_dialog_choices() -> list[tuple[str, str]]:
+        if dialog_phase == "review":
+            return review_choices()
+        if dialog_phase == "complete":
+            return complete_choices()
+        return []
+
+    def activate_dialog_choice() -> None:
+        nonlocal dialog_phase, dialog_selected, running, config, status_message, status_until
+        choices = active_dialog_choices()
+        if not choices:
+            return
+        action = choices[dialog_selected][1]
+        if dialog_phase == "review":
+            if action == "discard":
+                config = original_config.copy()
+                running = False
+            elif action == "apply":
+                try:
+                    save_override_config(config)
+                    dialog_phase = "complete"
+                    dialog_selected = 0
+                except Exception as exc:
+                    log_message(f"Save failed: {exc}")
+                    status_message = f"SAVE FAILED: {exc}"
+                    status_until = time.monotonic() + 4.0
+                    dialog_phase = "edit"
+            return
+        if action == "exit":
+            running = False
+        elif action == "reboot":
+            request_system_reboot()
+            running = False
 
     def adjust_selected(delta: int) -> None:
         nonlocal status_message, status_until
@@ -676,6 +732,13 @@ def main() -> int:
         result_line = f"Effective ES: {eff_w} x {eff_h}   Offset: {display_value(eff_x)}, {display_value(eff_y)}"
         result_surface = font_small.render(result_line, True, color_yellow)
         screen.blit(result_surface, result_surface.get_rect(center=(screen_w // 2, panel.top + int(83 * ui_scale))))
+        if dialog_phase == "edit":
+            apply_hint = font_small.render(
+                "Preview only: restart Batocera after saving to apply.",
+                True,
+                color_warn,
+            )
+            screen.blit(apply_hint, apply_hint.get_rect(center=(screen_w // 2, panel.top + int(100 * ui_scale))))
 
         start_y = panel.top + int(112 * ui_scale)
         row_gap = int(45 * ui_scale)
@@ -699,31 +762,67 @@ def main() -> int:
         legend_y = panel.bottom - int(62 * ui_scale)
         legend1 = font_small.render("LEFT/RIGHT: adjust 1    PAGE UP/DOWN: adjust 10", True, color_dim_green)
         screen.blit(legend1, legend1.get_rect(center=(screen_w // 2, legend_y)))
-        legend2 = font_small.render("[B/ENTER] SAVE   [X/R] RESET   [A/ESC] CANCEL", True, color_dim_green)
-        screen.blit(legend2, legend2.get_rect(center=(screen_w // 2, legend_y + int(22 * ui_scale))))
+        if dialog_phase == "edit":
+            legend2 = font_small.render(
+                "[B/ENTER] SAVE   [X/R] RESET   [A/ESC] CANCEL",
+                True,
+                color_dim_green,
+            )
+            screen.blit(legend2, legend2.get_rect(center=(screen_w // 2, legend_y + int(22 * ui_scale))))
 
-        if status_message and time.monotonic() < status_until:
+        if status_message and time.monotonic() < status_until and dialog_phase == "edit":
             status = font_small.render(status_message, True, color_warn)
             screen.blit(status, status.get_rect(center=(screen_w // 2, panel.bottom - int(12 * ui_scale))))
 
-        if show_saved:
+        if dialog_phase != "edit":
+            choices = active_dialog_choices()
             box_w = min(screen_w - 30, max(520, int(620 * ui_scale)))
-            box_h = min(screen_h - 30, max(220, int(270 * ui_scale)))
+            row_h = max(29, int(40 * ui_scale))
+            body_lines = (
+                [
+                    "Apply these centering and scaling values",
+                    "to es.arg.override?",
+                    "Restart Batocera afterward to use them",
+                    "in EmulationStation.",
+                ]
+                if dialog_phase == "review"
+                else [
+                    "Your settings were saved.",
+                    "Restart Batocera to apply them in EmulationStation.",
+                    "Reboot now, or return and reboot later.",
+                    f"ES: {eff_w} x {eff_h}  Offset: {display_value(eff_x)}, {display_value(eff_y)}",
+                ]
+            )
+            box_h = min(
+                screen_h - 30,
+                max(240, int(150 * ui_scale) + len(body_lines) * int(22 * ui_scale) + len(choices) * row_h),
+            )
             box = pygame.Rect((screen_w - box_w) // 2, (screen_h - box_h) // 2, box_w, box_h)
             pygame.draw.rect(screen, color_dark_green, box)
             pygame.draw.rect(screen, color_green, box, max(2, int(3 * ui_scale)))
-            msg1 = font_title.render("SETTINGS SAVED SUCCESSFULLY", True, color_green)
-            screen.blit(msg1, msg1.get_rect(center=(screen_w // 2, box.top + int(48 * ui_scale))))
-            msg2 = font_main.render(
-                f"ES: {eff_w} x {eff_h}  Offset: {display_value(eff_x)}, {display_value(eff_y)}",
+            modal_title = "APPLY SETTINGS?" if dialog_phase == "review" else "SETTINGS SAVED"
+            title_surface = font_title.render(modal_title, True, color_green)
+            screen.blit(title_surface, title_surface.get_rect(center=(screen_w // 2, box.top + int(38 * ui_scale))))
+            text_y = box.top + int(78 * ui_scale)
+            for line in body_lines:
+                line_surface = font_small.render(line, True, color_dim_green)
+                screen.blit(line_surface, line_surface.get_rect(center=(screen_w // 2, text_y)))
+                text_y += int(22 * ui_scale)
+            choice_y = box.bottom - int(24 * ui_scale) - len(choices) * row_h
+            for index, (label, _action) in enumerate(choices):
+                row = pygame.Rect(box.left + int(24 * ui_scale), choice_y + index * row_h, box.width - int(48 * ui_scale), row_h - 6)
+                picked = index == dialog_selected
+                if picked:
+                    pygame.draw.rect(screen, color_dark_green, row, border_radius=4)
+                prefix = "> " if picked else "  "
+                choice_surface = font_main.render(prefix + label, True, color_green if picked else color_dim_green)
+                screen.blit(choice_surface, choice_surface.get_rect(midleft=(row.left + int(10 * ui_scale), row.centery)))
+            footer = font_small.render(
+                "D-PAD / ARROWS: choose   A / ENTER: select",
                 True,
-                color_green,
+                color_dim_green,
             )
-            screen.blit(msg2, msg2.get_rect(center=(screen_w // 2, box.top + int(96 * ui_scale))))
-            msg3 = font_small.render("Back in EmulationStation: RIGHTALT (AltGr) + F2 to apply.", True, color_warn)
-            screen.blit(msg3, msg3.get_rect(center=(screen_w // 2, box.top + int(146 * ui_scale))))
-            msg4 = font_small.render("Press A / ENTER / ESC to continue", True, color_green)
-            screen.blit(msg4, msg4.get_rect(center=(screen_w // 2, box.top + int(184 * ui_scale))))
+            screen.blit(footer, footer.get_rect(center=(screen_w // 2, box.bottom - int(14 * ui_scale))))
 
         pygame.display.flip()
         clock.tick(60)
@@ -734,8 +833,17 @@ def main() -> int:
                 continue
 
             if event.type == pygame.KEYDOWN:
-                if show_saved:
-                    if time.monotonic() - saved_at > 0.25 and event.key in (pygame.K_RETURN, pygame.K_ESCAPE, pygame.K_SPACE):
+                if dialog_phase != "edit":
+                    choices = active_dialog_choices()
+                    if event.key in (pygame.K_UP, pygame.K_LEFT):
+                        dialog_selected = (dialog_selected - 1) % len(choices)
+                    elif event.key in (pygame.K_DOWN, pygame.K_RIGHT):
+                        dialog_selected = (dialog_selected + 1) % len(choices)
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                        activate_dialog_choice()
+                    elif event.key == pygame.K_ESCAPE and dialog_phase == "review":
+                        dialog_phase = "edit"
+                    elif event.key == pygame.K_ESCAPE and dialog_phase == "complete":
                         running = False
                     continue
 
@@ -756,45 +864,13 @@ def main() -> int:
                     status_message = "Reset to defaults (not saved yet)"
                     status_until = time.monotonic() + 2.0
                 elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                    try:
-                        save_override_config(config)
-                        show_saved = True
-                        saved_at = time.monotonic()
-                    except Exception as exc:
-                        log_message(f"Save failed: {exc}")
-                        status_message = f"SAVE FAILED: {exc}"
-                        status_until = time.monotonic() + 4.0
+                    dialog_phase = "review"
+                    dialog_selected = 0
                 elif event.key == pygame.K_ESCAPE:
-                    config = original_config
+                    config = original_config.copy()
                     running = False
 
-            # D-pad navigation uses es_adjust_tool.sh.keys (evmapy -> arrow keys).
-            # JOYHATMOTION duplicated each press and skipped every other menu row.
-
-            elif event.type == pygame.JOYBUTTONDOWN:
-                if show_saved:
-                    if time.monotonic() - saved_at > 0.25:
-                        running = False
-                    continue
-                # SDL's common A/B/X ordering. The .keys file also maps these to
-                # Enter/Escape/R, so controller support does not depend on raw
-                # joystick delivery reaching pygame.
-                if event.button == 0:  # A
-                    try:
-                        save_override_config(config)
-                        show_saved = True
-                        saved_at = time.monotonic()
-                    except Exception as exc:
-                        log_message(f"Save failed: {exc}")
-                        status_message = f"SAVE FAILED: {exc}"
-                        status_until = time.monotonic() + 4.0
-                elif event.button == 1:  # B
-                    config = original_config
-                    running = False
-                elif event.button == 2:  # X
-                    config = DEFAULT_CONFIG.copy()
-                    status_message = "Reset to defaults (not saved yet)"
-                    status_until = time.monotonic() + 2.0
+            # Gamepad input comes from es_adjust_tool.sh.keys (evmapy -> keys), same as Geometry.
 
     pygame.mouse.set_visible(True)
     pygame.quit()

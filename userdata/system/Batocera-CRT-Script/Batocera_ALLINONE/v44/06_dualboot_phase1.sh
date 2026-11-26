@@ -1,7 +1,7 @@
 # Batocera-CRT-Script v44 - step 06: dualboot phase1
 # Dual-boot Phase 1 (Wayland installs): find/download the X11 image, check MD5 and space, extract it to
 # /boot/crt, patch the initrd, add the CRT boot entries, deploy batocera-save-crt-overlay (run_phase1).
-# X11 image targets x86-64-v1+ (Old Desktop/Laptop): batocera-x86_64-*.img.gz on batocera.org/download.
+# X11 image is the "PC Older" row (x86_64 image, X11 session): batocera-x86_64-*.img.gz on batocera.org/download.
 # Image host matches the download page; MD5 lives on the o2switch stable mirror (same as v43).
 BETA_BASE="https://mirrors.o2switch.fr/batocera/x86_64/butterfly/last"
 STABLE_BASE="https://mirrors.o2switch.fr/batocera/x86_64/stable/last"
@@ -84,7 +84,7 @@ download_x11_image() {
       case "$dl_retry" in
         1) continue ;;
         2)
-          echo ""; echo "  Paste the direct download link for the X11 image (.img.gz, not .md5):"; echo ""
+          echo ""; echo "  Paste the direct download link for the X11 image (.img.gz, not .md5):"; echo "  On batocera.org/download, use the PC Older row (x86_64 image, X11 session)."; echo ""
           printf "  URL: "; read -r IMAGE_URL; sanitize_image_url
           filename=$(basename "$IMAGE_URL")
           X11_MD5_URL="${MD5_MIRROR_BASE}/${filename}.md5"

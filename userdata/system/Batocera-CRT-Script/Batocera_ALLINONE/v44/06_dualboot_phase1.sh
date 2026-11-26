@@ -5,7 +5,7 @@
 # Image host matches the download page; MD5 lives on the o2switch stable mirror (same as v43).
 BETA_BASE="https://mirrors.o2switch.fr/batocera/x86_64/butterfly/last"
 STABLE_BASE="https://mirrors.o2switch.fr/batocera/x86_64/stable/last"
-KATAPULT_IMAGE_BASE="https://sour-silent-prune.6fcff5d8.katapult.cloud/images"
+OFFICIAL_IMAGE_BASE="https://updates.batocera.org/x86_64/stable/last"
 MD5_MIRROR_BASE="https://mirrors.o2switch.fr/batocera/x86_64/stable/last"
 find_image() {
     local base="$1"
@@ -23,7 +23,7 @@ fi
 if [ -z "$IMG_NAME" ]; then
     echo "ERROR: Batocera v$TARGET_VER not found on either channel" >&2; exit 1
 fi
-X11_IMAGE_URL="${KATAPULT_IMAGE_BASE}/${IMG_NAME}"
+X11_IMAGE_URL="${OFFICIAL_IMAGE_BASE}/${IMG_NAME}"
 X11_MD5_URL="${MD5_MIRROR_BASE}/${IMG_NAME}.md5"
 sanitize_image_url() {
   IMAGE_URL="${IMAGE_URL%.md5}"; IMAGE_URL="${IMAGE_URL% }"

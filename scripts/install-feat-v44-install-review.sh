@@ -42,6 +42,18 @@ if [ -f "${DEST}/.install_phase" ] && [ ! -L "${DEST}/.install_phase" ]; then
   cp -a "${DEST}/.install_phase" "$phase_keep"
 fi
 
+
+# Keep this tool's original files/settings and any pending recovery across refresh.
+scaling_backup="${DEST}/extra/.scaling_tool_backup"
+scaling_keep="${preserve_dir}/scaling_tool_backup"
+if [ -e "$scaling_backup" ] || [ -L "$scaling_backup" ]; then
+  if [ ! -d "$scaling_backup" ] || [ -L "$scaling_backup" ]; then
+    echo "Scaling tool backup path is not a regular directory; update stopped." >&2
+    exit 1
+  fi
+  cp -a "$scaling_backup" "$scaling_keep"
+fi
+
 rm -rf "$DEST" "/userdata/system/${ZIP_ROOT}"
 unzip -qq "$ZIP_FILE" "${ZIP_ROOT}/userdata/system/Batocera-CRT-Script/*" -d /userdata/system/
 mkdir -p "$DEST"
@@ -52,6 +64,10 @@ if [ -f "$overlay_keep" ]; then
 fi
 if [ -f "$phase_keep" ]; then
   cp -a "$phase_keep" "${DEST}/.install_phase"
+fi
+if [ -d "$scaling_keep" ]; then
+  mkdir -p "${DEST}/extra/.scaling_tool_backup"
+  cp -a "$scaling_keep/." "${DEST}/extra/.scaling_tool_backup/"
 fi
 rm -rf "$ZIP_FILE" "/userdata/system/${ZIP_ROOT}" "$preserve_dir"
 
